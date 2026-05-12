@@ -12,7 +12,7 @@ const DEFAULT_SETTINGS = {
     meetingLevels: {
         doubleEnter: 'date',
         enter: 'time',
-        tab: 'minute',
+        tab: 'time',
     },
 };
 
@@ -259,6 +259,7 @@ class RunningMinutesPlugin extends Plugin {
     active = true;
     pendingStamp = false; // false | 'date' | 'time' | 'minute' | 'none'
     lastKeystrokeAt = 0;
+    tabCount = 0;
     settings = { ...DEFAULT_SETTINGS, meetingLevels: { ...DEFAULT_SETTINGS.meetingLevels } };
 
     async onload() {
@@ -267,7 +268,7 @@ class RunningMinutesPlugin extends Plugin {
 
         this.addRibbonIcon('clock', 'Running Minutes (click to toggle)', () => {
             this.active = !this.active;
-            this.pendingStamp = false;
+            this.pendingStamp = false; this.tabCount = 0;
             new Notice(`Running Minutes ${this.active ? 'ON ✓' : 'OFF'}`);
         });
 
@@ -284,7 +285,7 @@ class RunningMinutesPlugin extends Plugin {
             name: 'Toggle Meeting Notes Mode',
             callback: async () => {
                 this.settings.meetingNotesMode = !this.settings.meetingNotesMode;
-                this.pendingStamp = false;
+                this.pendingStamp = false; this.tabCount = 0;
                 await this.saveSettings();
                 new Notice(`Meeting Notes Mode ${this.settings.meetingNotesMode ? 'ON ✓' : 'OFF'}`);
             }
@@ -292,7 +293,7 @@ class RunningMinutesPlugin extends Plugin {
 
         this.registerDomEvent(document, 'keydown', this.onKeyDown.bind(this), true);
         this.registerEvent(this.app.workspace.on('active-leaf-change', () => {
-            this.pendingStamp = false;
+            this.pendingStamp = false; this.tabCount = 0;
         }));
     }
 
@@ -326,6 +327,7 @@ class RunningMinutesPlugin extends Plugin {
 
             if (this.inTitle()) {
                 this.pendingStamp = meetingNotesMode ? meetingLevels.enter : 'time';
+                this.tabCount = 0;
                 this.lastKeystrokeAt = Date.now();
                 return;
             }
@@ -347,16 +349,17 @@ class RunningMinutesPlugin extends Plugin {
             return;
         }
 
-        // Tab while stamp pending → assign tab level, let Tab indent normally
+        // Tab while stamp pending → first Tab = configured level, second Tab = minutes only
         if (meetingNotesMode && evt.key === 'Tab' && this.pendingStamp) {
-            this.pendingStamp = meetingLevels.tab;
+            this.tabCount++;
+            this.pendingStamp = this.tabCount === 1 ? meetingLevels.tab : 'minute';
             return;
         }
 
         // Non-printable keys → cancel (Tab is structural indentation, doesn't cancel)
         if (evt.key.length !== 1 || evt.ctrlKey || evt.metaKey || evt.altKey) {
             if (!['Shift', 'Control', 'Alt', 'Meta', 'Tab'].includes(evt.key)) {
-                this.pendingStamp = false;
+                this.pendingStamp = false; this.tabCount = 0;
             }
             return;
         }
@@ -371,7 +374,7 @@ class RunningMinutesPlugin extends Plugin {
         const idle = this.lastKeystrokeAt > 0 && (now - this.lastKeystrokeAt) >= 30_000;
         const stampLevel = this.pendingStamp || (idle ? 'time' : false);
 
-        this.pendingStamp = false;
+        this.pendingStamp = false; this.tabCount = 0;
         this.lastKeystrokeAt = now;
 
         if (stampLevel && stampLevel !== 'none') {
