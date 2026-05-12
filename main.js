@@ -318,6 +318,12 @@ class RunningMinutesPlugin extends Plugin {
             saved,
             { meetingLevels: Object.assign({}, DEFAULT_SETTINGS.meetingLevels, saved?.meetingLevels) }
         );
+        // Migrate: tab default was 'minute' before v2, correct it to 'time'
+        if (!saved?.settingsVersion && this.settings.meetingLevels.tab === 'minute') {
+            this.settings.meetingLevels.tab = 'time';
+            this.settings.settingsVersion = 2;
+            await this.saveSettings();
+        }
     }
 
     async saveSettings() {
