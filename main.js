@@ -3,9 +3,11 @@ const { Plugin, MarkdownView, Notice, PluginSettingTab, Setting } = require('obs
 
 const DEFAULT_SETTINGS = {
     showDate: true,
-    dateStyle: 'long',  // 'long' | 'short' | 'iso'
+    dateStyle: 'long',       // 'long' | 'short' | 'iso'
+    showDayOfWeek: false,
     showTime: true,
-    timeFormat: '12h',  // '12h' | '24h'
+    timeFormat: '12h',       // '12h' | '24h'
+    timePrecision: 'minute', // 'hour' | 'quarter' | 'five' | 'minute' | 'second'
 };
 
 class RunningMinutesSettingTab extends PluginSettingTab {
@@ -49,6 +51,17 @@ class RunningMinutesSettingTab extends PluginSettingTab {
                 }));
 
         new Setting(containerEl)
+            .setName('Show day of week')
+            .setDesc('Prepend the day name to the date — e.g. Monday, May 12, 2026.')
+            .addToggle(t => t
+                .setValue(this.plugin.settings.showDayOfWeek)
+                .onChange(async v => {
+                    this.plugin.settings.showDayOfWeek = v;
+                    await this.plugin.saveSettings();
+                    refresh();
+                }));
+
+        new Setting(containerEl)
             .setName('Show time')
             .setDesc('Include the time in the timestamp.')
             .addToggle(t => t
@@ -67,6 +80,22 @@ class RunningMinutesSettingTab extends PluginSettingTab {
                 .setValue(this.plugin.settings.timeFormat)
                 .onChange(async v => {
                     this.plugin.settings.timeFormat = v;
+                    await this.plugin.saveSettings();
+                    refresh();
+                }));
+
+        new Setting(containerEl)
+            .setName('Time precision')
+            .addDropdown(d => d
+                .addOption('hour',    'Hour only — 2 PM')
+                .addOption('quarter', 'Nearest quarter-hour — 2:15 PM')
+                .addOption('five',    'Nearest 5 minutes — 2:30 PM')
+                .addOption('minute',  'To the minute — 2:34 PM')
+                .addOption('second',  'To the second — 2:34:52 PM')
+                .addOption('ms',      'To the millisecond — 2:34:52.007 PM')
+                .setValue(this.plugin.settings.timePrecision)
+                .onChange(async v => {
+                    this.plugin.settings.timePrecision = v;
                     await this.plugin.saveSettings();
                     refresh();
                 }));
@@ -165,33 +194,57 @@ class RunningMinutesPlugin extends Plugin {
     }
 
     timestamp() {
-        const { showDate, dateStyle, showTime, timeFormat } = this.settings;
+        const { showDate, dateStyle, showDayOfWeek, showTime, timeFormat, timePrecision } = this.settings;
         const d = new Date();
         const parts = [];
 
         if (showDate) {
+            const DAYS  = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+            const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+            const dow = showDayOfWeek ? DAYS[d.getDay()] + ', ' : '';
             if (dateStyle === 'long') {
-                const mo = ['Jan','Feb','Mar','Apr','May','Jun',
-                            'Jul','Aug','Sep','Oct','Nov','Dec'][d.getMonth()];
-                parts.push(`${mo} ${d.getDate()}, ${d.getFullYear()}`);
+                parts.push(`${dow}${MONTHS[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()}`);
             } else if (dateStyle === 'short') {
-                parts.push(`${d.getMonth()+1}/${d.getDate()}/${String(d.getFullYear()).slice(2)}`);
+                parts.push(`${dow}${d.getMonth()+1}/${d.getDate()}/${String(d.getFullYear()).slice(2)}`);
             } else {
                 const mo  = String(d.getMonth()+1).padStart(2,'0');
                 const day = String(d.getDate()).padStart(2,'0');
-                parts.push(`${d.getFullYear()}-${mo}-${day}`);
+                parts.push(`${dow}${d.getFullYear()}-${mo}-${day}`);
             }
         }
 
         if (showTime) {
-            const min = String(d.getMinutes()).padStart(2,'0');
+            let h = d.getHours();
+            let m = d.getMinutes();
+            const s = d.getSeconds();
+            const ms = d.getMilliseconds();
+
+            if (timePrecision === 'quarter') {
+                m = Math.round(m / 15) * 15;
+                if (m === 60) { m = 0; h = (h + 1) % 24; }
+            } else if (timePrecision === 'five') {
+                m = Math.round(m / 5) * 5;
+                if (m === 60) { m = 0; h = (h + 1) % 24; }
+            }
+
+            const minStr = String(m).padStart(2,'0');
+            const secStr = String(s).padStart(2,'0');
+            const msStr  = String(ms).padStart(3,'0');
+
             if (timeFormat === '24h') {
-                parts.push(`${String(d.getHours()).padStart(2,'0')}:${min}`);
+                const hStr = String(h).padStart(2,'0');
+                if (timePrecision === 'hour')    parts.push(hStr);
+                else if (timePrecision === 'second') parts.push(`${hStr}:${minStr}:${secStr}`);
+                else if (timePrecision === 'ms')     parts.push(`${hStr}:${minStr}:${secStr}.${msStr}`);
+                else                                 parts.push(`${hStr}:${minStr}`);
             } else {
-                let h = d.getHours(), ap = 'AM';
+                let ap = 'AM';
                 if (h >= 12) { ap = 'PM'; if (h > 12) h -= 12; }
                 if (h === 0) h = 12;
-                parts.push(`${h}:${min} ${ap}`);
+                if (timePrecision === 'hour')        parts.push(`${h} ${ap}`);
+                else if (timePrecision === 'second') parts.push(`${h}:${minStr}:${secStr} ${ap}`);
+                else if (timePrecision === 'ms')     parts.push(`${h}:${minStr}:${secStr}.${msStr} ${ap}`);
+                else                                 parts.push(`${h}:${minStr} ${ap}`);
             }
         }
 
