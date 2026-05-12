@@ -270,8 +270,7 @@ class RunningMinutesPlugin extends Plugin {
     active = true;
     pendingStamp = false; // false | 'date' | 'time' | 'minute' | 'none'
     lastKeystrokeAt = 0;
-    tabCount = 0;
-    leafChangeStamp = false; // stamp first char after switching notes if cursor is at col 0
+    leafChangeStamp = false;
     settings = { ...DEFAULT_SETTINGS, meetingLevels: { ...DEFAULT_SETTINGS.meetingLevels } };
 
     async onload() {
@@ -280,7 +279,7 @@ class RunningMinutesPlugin extends Plugin {
 
         this.addRibbonIcon('clock', 'Running Minutes (click to toggle)', () => {
             this.active = !this.active;
-            this.pendingStamp = false; this.tabCount = 0;
+            this.pendingStamp = false;
             new Notice(`Running Minutes ${this.active ? 'ON ✓' : 'OFF'}`);
         });
 
@@ -297,7 +296,7 @@ class RunningMinutesPlugin extends Plugin {
             name: 'Toggle Meeting Notes Mode',
             callback: async () => {
                 this.settings.meetingNotesMode = !this.settings.meetingNotesMode;
-                this.pendingStamp = false; this.tabCount = 0;
+                this.pendingStamp = false;
                 await this.saveSettings();
                 new Notice(`Meeting Notes Mode ${this.settings.meetingNotesMode ? 'ON ✓' : 'OFF'}`);
             }
@@ -305,7 +304,7 @@ class RunningMinutesPlugin extends Plugin {
 
         this.registerDomEvent(document, 'keydown', this.onKeyDown.bind(this), true);
         this.registerEvent(this.app.workspace.on('active-leaf-change', () => {
-            this.pendingStamp = false; this.tabCount = 0;
+            this.pendingStamp = false;
             this.leafChangeStamp = true;
         }));
     }
@@ -346,7 +345,6 @@ class RunningMinutesPlugin extends Plugin {
 
             if (this.inTitle()) {
                 this.pendingStamp = meetingNotesMode ? meetingLevels.enter : 'time';
-                this.tabCount = 0;
                 this.lastKeystrokeAt = Date.now();
                 return;
             }
@@ -368,17 +366,16 @@ class RunningMinutesPlugin extends Plugin {
             return;
         }
 
-        // Tab while stamp pending → first Tab = configured level, second Tab = minutes only
+        // Tab while stamp pending → keep stamp set, let Tab indent normally
+        // (stamp level is determined by cursor column when character is typed)
         if (meetingNotesMode && evt.key === 'Tab' && this.pendingStamp) {
-            this.tabCount++;
-            this.pendingStamp = this.tabCount === 1 ? meetingLevels.tab : 'minute';
             return;
         }
 
         // Non-printable keys → cancel (Tab is structural indentation, doesn't cancel)
         if (evt.key.length !== 1 || evt.ctrlKey || evt.metaKey || evt.altKey) {
             if (!['Shift', 'Control', 'Alt', 'Meta', 'Tab'].includes(evt.key)) {
-                this.pendingStamp = false; this.tabCount = 0;
+                this.pendingStamp = false;
             }
             this.leafChangeStamp = false;
             return;
@@ -402,9 +399,23 @@ class RunningMinutesPlugin extends Plugin {
             }
         }
 
-        const stampLevel = this.pendingStamp || (idle ? 'time' : false);
+        let stampLevel = this.pendingStamp || (idle ? 'time' : false);
 
-        this.pendingStamp = false; this.tabCount = 0;
+        // In meeting notes mode, use cursor column to determine indent level
+        // rather than counting Tab keypresses — more reliable
+        if (stampLevel && meetingNotesMode && stampLevel !== 'date') {
+            const cursor = view.editor.getCursor();
+            const line = view.editor.getLine(cursor.line);
+            const indentStr = line.substring(0, cursor.ch);
+            // normalise tabs to 4 spaces, then count indent levels
+            const indentWidth = indentStr.replace(/\t/g, '    ').length;
+            const indentLevel = Math.round(indentWidth / 4);
+            if (indentLevel === 0)      stampLevel = meetingLevels.enter;
+            else if (indentLevel === 1) stampLevel = meetingLevels.tab;
+            else                        stampLevel = 'minute';
+        }
+
+        this.pendingStamp = false;
         this.lastKeystrokeAt = now;
 
         if (stampLevel && stampLevel !== 'none') {
