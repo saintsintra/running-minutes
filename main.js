@@ -65,7 +65,7 @@ class RunningMinutesSettingTab extends PluginSettingTab {
 
         new Setting(containerEl)
             .setName('Show day of week')
-            .setDesc('Prepend the day name to the date — e.g. Monday, May 12, 2026.')
+            .setDesc('Show the day name. Works independently — e.g. "Monday" alone, or "Monday, May 12, 2026" with date.')
             .addToggle(t => t
                 .setValue(this.plugin.settings.showDayOfWeek)
                 .onChange(async v => {
@@ -382,16 +382,21 @@ class RunningMinutesPlugin extends Plugin {
         }
 
         if (level === 'date') {
-            const dow = showDayOfWeek ? DAYS[d.getDay()] + ', ' : '';
-            if (dateStyle === 'short') {
-                return `${dow}${d.getMonth()+1}/${d.getDate()}/${String(d.getFullYear()).slice(2)}`;
-            } else if (dateStyle === 'iso') {
-                const mo  = String(d.getMonth()+1).padStart(2,'0');
-                const day = String(d.getDate()).padStart(2,'0');
-                return `${dow}${d.getFullYear()}-${mo}-${day}`;
-            } else {
-                return `${dow}${MONTHS[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()}`;
+            const { showDate } = this.settings;
+            const dow = showDayOfWeek ? DAYS[d.getDay()] : '';
+            let datePart = '';
+            if (showDate) {
+                if (dateStyle === 'short') {
+                    datePart = `${d.getMonth()+1}/${d.getDate()}/${String(d.getFullYear()).slice(2)}`;
+                } else if (dateStyle === 'iso') {
+                    const mo  = String(d.getMonth()+1).padStart(2,'0');
+                    const day = String(d.getDate()).padStart(2,'0');
+                    datePart = `${d.getFullYear()}-${mo}-${day}`;
+                } else {
+                    datePart = `${MONTHS[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()}`;
+                }
             }
+            return dow && datePart ? `${dow}, ${datePart}` : dow || datePart;
         }
 
         // 'time'
@@ -412,17 +417,21 @@ class RunningMinutesPlugin extends Plugin {
         const DAYS   = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
         const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 
-        if (showDate) {
-            const dow = showDayOfWeek ? DAYS[d.getDay()] + ', ' : '';
-            if (dateStyle === 'long') {
-                parts.push(`${dow}${MONTHS[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()}`);
-            } else if (dateStyle === 'short') {
-                parts.push(`${dow}${d.getMonth()+1}/${d.getDate()}/${String(d.getFullYear()).slice(2)}`);
-            } else {
-                const mo  = String(d.getMonth()+1).padStart(2,'0');
-                const day = String(d.getDate()).padStart(2,'0');
-                parts.push(`${dow}${d.getFullYear()}-${mo}-${day}`);
+        if (showDate || showDayOfWeek) {
+            const dow = showDayOfWeek ? DAYS[d.getDay()] : '';
+            let datePart = '';
+            if (showDate) {
+                if (dateStyle === 'long') {
+                    datePart = `${MONTHS[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()}`;
+                } else if (dateStyle === 'short') {
+                    datePart = `${d.getMonth()+1}/${d.getDate()}/${String(d.getFullYear()).slice(2)}`;
+                } else {
+                    const mo  = String(d.getMonth()+1).padStart(2,'0');
+                    const day = String(d.getDate()).padStart(2,'0');
+                    datePart = `${d.getFullYear()}-${mo}-${day}`;
+                }
             }
+            parts.push(dow && datePart ? `${dow}, ${datePart}` : dow || datePart);
         }
 
         if (showTime) {
