@@ -342,9 +342,9 @@ class RunningMinutesPlugin extends Plugin {
             return;
         }
 
-        // Non-printable keys → cancel
+        // Non-printable keys → cancel (Tab is structural indentation, doesn't cancel)
         if (evt.key.length !== 1 || evt.ctrlKey || evt.metaKey || evt.altKey) {
-            if (!['Shift', 'Control', 'Alt', 'Meta'].includes(evt.key)) {
+            if (!['Shift', 'Control', 'Alt', 'Meta', 'Tab'].includes(evt.key)) {
                 this.pendingStamp = false;
             }
             return;
@@ -399,15 +399,39 @@ class RunningMinutesPlugin extends Plugin {
             return dow && datePart ? `${dow}, ${datePart}` : dow || datePart;
         }
 
-        // 'time'
-        const min = String(d.getMinutes()).padStart(2,'0');
-        if (timeFormat === '24h') {
-            return `${String(d.getHours()).padStart(2,'0')}:${min}`;
+        // 'time' — respects timePrecision setting
+        const { timePrecision } = this.settings;
+        let h = d.getHours();
+        let m = d.getMinutes();
+        const s  = d.getSeconds();
+        const ms = d.getMilliseconds();
+
+        if (timePrecision === 'quarter') {
+            m = Math.round(m / 15) * 15;
+            if (m === 60) { m = 0; h = (h + 1) % 24; }
+        } else if (timePrecision === 'five') {
+            m = Math.round(m / 5) * 5;
+            if (m === 60) { m = 0; h = (h + 1) % 24; }
         }
-        let h = d.getHours(), ap = 'AM';
+
+        const minStr = String(m).padStart(2,'0');
+        const secStr = String(s).padStart(2,'0');
+        const msStr  = String(ms).padStart(3,'0');
+
+        if (timeFormat === '24h') {
+            const hStr = String(h).padStart(2,'0');
+            if (timePrecision === 'hour')        return hStr;
+            if (timePrecision === 'second')      return `${hStr}:${minStr}:${secStr}`;
+            if (timePrecision === 'ms')          return `${hStr}:${minStr}:${secStr}.${msStr}`;
+            return `${hStr}:${minStr}`;
+        }
+        let ap = 'AM';
         if (h >= 12) { ap = 'PM'; if (h > 12) h -= 12; }
         if (h === 0) h = 12;
-        return `${h}:${min} ${ap}`;
+        if (timePrecision === 'hour')            return `${h} ${ap}`;
+        if (timePrecision === 'second')          return `${h}:${minStr}:${secStr} ${ap}`;
+        if (timePrecision === 'ms')              return `${h}:${minStr}:${secStr}.${msStr} ${ap}`;
+        return `${h}:${minStr} ${ap}`;
     }
 
     timestamp() {
