@@ -116,6 +116,17 @@ class RunningMinutesSettingTab extends PluginSettingTab {
         // Meeting Notes Mode
         containerEl.createEl('h3', { text: 'Meeting Notes Mode' });
 
+        const modeDesc = containerEl.createEl('p', { cls: 'setting-item-description' });
+        modeDesc.style.marginBottom = '1em';
+        modeDesc.innerHTML =
+            'When enabled, the timestamp inserted depends on how you structure your note:<br><br>' +
+            '<strong>⏎⏎ Double Enter</strong> — starts a new section with a date header.<br>' +
+            '<strong>⏎ Enter</strong> — adds a new line with the time.<br>' +
+            '<strong>⇥ Tab</strong> — indents with the time (configurable below).<br>' +
+            '<strong>⇥⇥ Double Tab</strong> — indents further with minutes only.<br><br>' +
+            'Toggle this mode on/off anytime via the <strong>command palette</strong> (⌘P → "Toggle Meeting Notes Mode"), ' +
+            'or assign it a keyboard shortcut in <strong>Settings → Hotkeys</strong>.';
+
         new Setting(containerEl)
             .setName('Enable meeting notes mode')
             .setDesc('Assign a different timestamp to each level of your notes hierarchy.')
