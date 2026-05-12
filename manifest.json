@@ -1,7 +1,7 @@
 {
   "id": "running-minutes",
   "name": "Running Minutes",
-  "version": "1.4.5",
+  "version": "1.4.6",
   "minAppVersion": "0.15.0",
   "description": "Automatically prepends a date+time stamp to every new line you create.",
   "author": "Sintra Martins",

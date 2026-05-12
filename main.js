@@ -271,6 +271,7 @@ class RunningMinutesPlugin extends Plugin {
     pendingStamp = false; // false | 'date' | 'time' | 'minute' | 'none'
     lastKeystrokeAt = 0;
     tabCount = 0;
+    leafChangeStamp = false; // stamp first char after switching notes if cursor is at col 0
     settings = { ...DEFAULT_SETTINGS, meetingLevels: { ...DEFAULT_SETTINGS.meetingLevels } };
 
     async onload() {
@@ -305,6 +306,7 @@ class RunningMinutesPlugin extends Plugin {
         this.registerDomEvent(document, 'keydown', this.onKeyDown.bind(this), true);
         this.registerEvent(this.app.workspace.on('active-leaf-change', () => {
             this.pendingStamp = false; this.tabCount = 0;
+            this.leafChangeStamp = true;
         }));
     }
 
@@ -372,6 +374,7 @@ class RunningMinutesPlugin extends Plugin {
             if (!['Shift', 'Control', 'Alt', 'Meta', 'Tab'].includes(evt.key)) {
                 this.pendingStamp = false; this.tabCount = 0;
             }
+            this.leafChangeStamp = false;
             return;
         }
 
@@ -383,6 +386,16 @@ class RunningMinutesPlugin extends Plugin {
 
         const now = Date.now();
         const idle = this.lastKeystrokeAt > 0 && (now - this.lastKeystrokeAt) >= 30_000;
+
+        // First keystroke after switching notes — stamp if cursor is at start of line
+        if (this.leafChangeStamp) {
+            this.leafChangeStamp = false;
+            const cursor = view.editor.getCursor();
+            if (cursor.ch === 0 && !this.pendingStamp) {
+                this.pendingStamp = meetingNotesMode ? meetingLevels.enter : 'time';
+            }
+        }
+
         const stampLevel = this.pendingStamp || (idle ? 'time' : false);
 
         this.pendingStamp = false; this.tabCount = 0;
