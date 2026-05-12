@@ -22,6 +22,13 @@ class RunningMinutesPlugin extends Plugin {
         });
 
         this.registerDomEvent(document, 'keydown', this.onKeyDown.bind(this), true);
+        this.registerEvent(this.app.workspace.on('active-leaf-change', () => {
+            this.pendingStamp = false;
+        }));
+    }
+
+    inTitle() {
+        return !!document.activeElement?.closest('.inline-title');
     }
 
     onKeyDown(evt) {
@@ -33,6 +40,7 @@ class RunningMinutesPlugin extends Plugin {
             if (!view || view.getMode() !== 'source') return;
             if (document.querySelector('.suggestion-container, .cm-tooltip-autocomplete')) return;
             if (!document.activeElement?.closest('.cm-editor')) return;
+            if (this.inTitle()) return;
 
             evt.preventDefault();
             evt.stopImmediatePropagation();
@@ -54,6 +62,7 @@ class RunningMinutesPlugin extends Plugin {
         const view = this.app.workspace.getActiveViewOfType(MarkdownView);
         if (!view || view.getMode() !== 'source') return;
         if (!document.activeElement?.closest('.cm-editor')) return;
+        if (this.inTitle()) return;
 
         const now = Date.now();
         const idle = this.lastKeystrokeAt > 0 && (now - this.lastKeystrokeAt) >= 30_000;
