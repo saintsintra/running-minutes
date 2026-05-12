@@ -7,7 +7,8 @@ const DEFAULT_SETTINGS = {
     showDayOfWeek: false,
     showTime: true,
     timeFormat: '12h',       // '12h' | '24h'
-    timePrecision: 'minute', // 'hour' | 'quarter' | 'five' | 'minute' | 'second'
+    timePrecision: 'minute', // 'hour' | 'quarter' | 'five' | 'minute' | 'second' | 'ms'
+    meetingNotesMode: false,
 };
 
 class RunningMinutesSettingTab extends PluginSettingTab {
@@ -99,12 +100,25 @@ class RunningMinutesSettingTab extends PluginSettingTab {
                     await this.plugin.saveSettings();
                     refresh();
                 }));
+
+        containerEl.createEl('h3', { text: 'Meeting Notes Mode' });
+
+        new Setting(containerEl)
+            .setName('Enable meeting notes mode')
+            .setDesc('Varies the timestamp by how you press Enter:\n• Enter → time (2:34 PM)\n• Tab after Enter → minutes only (:34)\n• Double Enter → date (Monday, May 12, 2026)')
+            .addToggle(t => t
+                .setValue(this.plugin.settings.meetingNotesMode)
+                .onChange(async v => {
+                    this.plugin.settings.meetingNotesMode = v;
+                    await this.plugin.saveSettings();
+                    refresh();
+                }));
     }
 }
 
 class RunningMinutesPlugin extends Plugin {
     active = true;
-    pendingStamp = false;
+    pendingStamp = false; // false | 'minute' | 'time' | 'date'
     lastKeystrokeAt = 0;
     settings = { ...DEFAULT_SETTINGS };
 
@@ -146,6 +160,7 @@ class RunningMinutesPlugin extends Plugin {
 
     onKeyDown(evt) {
         if (!this.active) return;
+        const { meetingNotesMode } = this.settings;
 
         if (evt.key === 'Enter' && !evt.shiftKey && !evt.ctrlKey && !evt.metaKey && !evt.altKey) {
             const view = this.app.workspace.getActiveViewOfType(MarkdownView);
@@ -154,19 +169,35 @@ class RunningMinutesPlugin extends Plugin {
             if (!document.activeElement?.closest('.cm-editor')) return;
 
             if (this.inTitle()) {
-                this.pendingStamp = true;
+                this.pendingStamp = 'time';
                 this.lastKeystrokeAt = Date.now();
+                return;
+            }
+
+            // Double Enter in meeting notes mode → upgrade to date stamp
+            if (meetingNotesMode && this.pendingStamp) {
+                this.pendingStamp = 'date';
+                evt.preventDefault();
+                evt.stopImmediatePropagation();
+                view.editor.replaceSelection('\n');
                 return;
             }
 
             evt.preventDefault();
             evt.stopImmediatePropagation();
             view.editor.replaceSelection('\n');
-            this.pendingStamp = true;
+            this.pendingStamp = 'time';
             this.lastKeystrokeAt = Date.now();
             return;
         }
 
+        // Tab while stamp pending → downgrade to minute-level stamp, let Tab indent normally
+        if (meetingNotesMode && evt.key === 'Tab' && this.pendingStamp) {
+            this.pendingStamp = 'minute';
+            return;
+        }
+
+        // Non-printable keys → cancel pending stamp
         if (evt.key.length !== 1 || evt.ctrlKey || evt.metaKey || evt.altKey) {
             if (!['Shift', 'Control', 'Alt', 'Meta'].includes(evt.key)) {
                 this.pendingStamp = false;
@@ -174,6 +205,7 @@ class RunningMinutesPlugin extends Plugin {
             return;
         }
 
+        // Printable character
         const view = this.app.workspace.getActiveViewOfType(MarkdownView);
         if (!view || view.getMode() !== 'source') return;
         if (!document.activeElement?.closest('.cm-editor')) return;
@@ -181,26 +213,61 @@ class RunningMinutesPlugin extends Plugin {
 
         const now = Date.now();
         const idle = this.lastKeystrokeAt > 0 && (now - this.lastKeystrokeAt) >= 30_000;
-        const stamp = this.pendingStamp || idle;
+        const stampLevel = this.pendingStamp || (idle ? 'time' : false);
 
         this.pendingStamp = false;
         this.lastKeystrokeAt = now;
 
-        if (stamp) {
+        if (stampLevel) {
             evt.preventDefault();
             evt.stopImmediatePropagation();
-            view.editor.replaceSelection('[' + this.timestamp() + '] ' + evt.key);
+            const ts = meetingNotesMode ? this.timestampForLevel(stampLevel) : this.timestamp();
+            view.editor.replaceSelection('[' + ts + '] ' + evt.key);
         }
+    }
+
+    timestampForLevel(level) {
+        const { dateStyle, showDayOfWeek, timeFormat } = this.settings;
+        const d = new Date();
+        const DAYS   = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+        const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+
+        if (level === 'minute') {
+            return `:${String(d.getMinutes()).padStart(2,'0')}`;
+        }
+
+        if (level === 'date') {
+            const dow = showDayOfWeek ? DAYS[d.getDay()] + ', ' : '';
+            if (dateStyle === 'short') {
+                return `${dow}${d.getMonth()+1}/${d.getDate()}/${String(d.getFullYear()).slice(2)}`;
+            } else if (dateStyle === 'iso') {
+                const mo  = String(d.getMonth()+1).padStart(2,'0');
+                const day = String(d.getDate()).padStart(2,'0');
+                return `${dow}${d.getFullYear()}-${mo}-${day}`;
+            } else {
+                return `${dow}${MONTHS[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()}`;
+            }
+        }
+
+        // 'time' — hour:minute, respects 12h/24h setting
+        const min = String(d.getMinutes()).padStart(2,'0');
+        if (timeFormat === '24h') {
+            return `${String(d.getHours()).padStart(2,'0')}:${min}`;
+        }
+        let h = d.getHours(), ap = 'AM';
+        if (h >= 12) { ap = 'PM'; if (h > 12) h -= 12; }
+        if (h === 0) h = 12;
+        return `${h}:${min} ${ap}`;
     }
 
     timestamp() {
         const { showDate, dateStyle, showDayOfWeek, showTime, timeFormat, timePrecision } = this.settings;
         const d = new Date();
         const parts = [];
+        const DAYS   = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+        const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 
         if (showDate) {
-            const DAYS  = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
-            const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
             const dow = showDayOfWeek ? DAYS[d.getDay()] + ', ' : '';
             if (dateStyle === 'long') {
                 parts.push(`${dow}${MONTHS[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()}`);
@@ -216,7 +283,7 @@ class RunningMinutesPlugin extends Plugin {
         if (showTime) {
             let h = d.getHours();
             let m = d.getMinutes();
-            const s = d.getSeconds();
+            const s  = d.getSeconds();
             const ms = d.getMilliseconds();
 
             if (timePrecision === 'quarter') {
@@ -233,7 +300,7 @@ class RunningMinutesPlugin extends Plugin {
 
             if (timeFormat === '24h') {
                 const hStr = String(h).padStart(2,'0');
-                if (timePrecision === 'hour')    parts.push(hStr);
+                if (timePrecision === 'hour')        parts.push(hStr);
                 else if (timePrecision === 'second') parts.push(`${hStr}:${minStr}:${secStr}`);
                 else if (timePrecision === 'ms')     parts.push(`${hStr}:${minStr}:${secStr}.${msStr}`);
                 else                                 parts.push(`${hStr}:${minStr}`);
