@@ -279,6 +279,17 @@ class RunningMinutesPlugin extends Plugin {
             }
         });
 
+        this.addCommand({
+            id: 'toggle-meeting-notes-mode',
+            name: 'Toggle Meeting Notes Mode',
+            callback: async () => {
+                this.settings.meetingNotesMode = !this.settings.meetingNotesMode;
+                this.pendingStamp = false;
+                await this.saveSettings();
+                new Notice(`Meeting Notes Mode ${this.settings.meetingNotesMode ? 'ON ✓' : 'OFF'}`);
+            }
+        });
+
         this.registerDomEvent(document, 'keydown', this.onKeyDown.bind(this), true);
         this.registerEvent(this.app.workspace.on('active-leaf-change', () => {
             this.pendingStamp = false;
